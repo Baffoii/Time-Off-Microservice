@@ -2,6 +2,10 @@
 
 A production-quality Time-Off management microservice built with NestJS, TypeORM, and SQLite. Handles employee time-off balance tracking, request processing, and synchronization with an external HCM (Human Capital Management) system.
 
+TRD: https://github.com/Baffoii/Time-Off-Microservice/blob/main/TRD.md
+Test Cases: [https://github.com/Baffoii/Time-Off-Microservice/tree/main/test/unit](https://github.com/Baffoii/Time-Off-Microservice/tree/main/test)
+Coverage: https://github.com/Baffoii/Time-Off-Microservice/tree/main/coverage
+
 ---
 
 ## Table of Contents
