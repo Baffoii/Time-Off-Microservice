@@ -1,5 +1,7 @@
 # Time-Off Microservice
 
+[![CI](https://github.com/Baffoii/Time-Off-Microservice/actions/workflows/ci.yml/badge.svg)](https://github.com/Baffoii/Time-Off-Microservice/actions/workflows/ci.yml)
+
 A production-quality Time-Off management microservice built with NestJS, TypeORM, and SQLite. Handles employee time-off balance tracking, request processing, and synchronization with an external HCM (Human Capital Management) system.
 
 ---
@@ -11,7 +13,7 @@ A production-quality Time-Off management microservice built with NestJS, TypeORM
 | **TRD** | [TRD.md](https://github.com/Baffoii/Time-Off-Microservice/blob/main/TRD.md) — Technical Requirements Document covering architecture, data model, API design, sync strategy, failure modes, and design decisions |
 | **Code** | [github.com/Baffoii/Time-Off-Microservice](https://github.com/Baffoii/Time-Off-Microservice) — Full NestJS 11 + TypeORM + SQLite implementation |
 | **Test Cases** | [test/](https://github.com/Baffoii/Time-Off-Microservice/tree/main/test) — 143 tests across unit, integration, and E2E (all 30 spec scenarios covered) |
-| **Coverage** | [coverage/index.html](https://github.com/Baffoii/Time-Off-Microservice/blob/main/coverage/index.html) · [coverage-report.pdf](https://github.com/Baffoii/Time-Off-Microservice/blob/main/coverage-report.pdf) — 99.39% statement coverage |
+| **Coverage** | [baffoii.github.io/Time-Off-Microservice](https://baffoii.github.io/Time-Off-Microservice/) · [coverage-report.pdf](https://github.com/Baffoii/Time-Off-Microservice/blob/main/coverage-report.pdf) — 99.39% statement coverage |
 
 ---
 
