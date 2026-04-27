@@ -195,4 +195,21 @@ describe('HcmClientService', () => {
       await expect(service.getBatchBalances()).rejects.toThrow(HcmServerError);
     });
   });
+
+  describe('handleAxiosError edge cases', () => {
+    it('re-throws non-AxiosError errors as-is', async () => {
+      const nativeError = new TypeError('network failure');
+      httpService.get.mockReturnValue(throwError(() => nativeError));
+
+      await expect(service.getBalance('emp1', 'loc1')).rejects.toThrow(TypeError);
+    });
+
+    it('wraps AxiosError with no status as HcmServerError', async () => {
+      const err = new AxiosError('connection refused');
+      // no err.response, no timeout code
+      httpService.get.mockReturnValue(throwError(() => err));
+
+      await expect(service.getBalance('emp1', 'loc1')).rejects.toThrow(HcmServerError);
+    });
+  });
 });

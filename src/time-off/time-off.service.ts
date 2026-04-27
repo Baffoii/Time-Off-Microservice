@@ -150,16 +150,6 @@ export class TimeOffService {
         localBalance.source = 'HCM_REALTIME';
         localBalance.lastSyncedAt = new Date();
         await this.balanceRepo.save(localBalance);
-      } else {
-        await this.balanceRepo.save(
-          this.balanceRepo.create({
-            employeeId,
-            locationId,
-            balanceDays: hcmDays,
-            source: 'HCM_REALTIME',
-            lastSyncedAt: new Date(),
-          }),
-        );
       }
     }
 

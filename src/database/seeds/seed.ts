@@ -24,11 +24,11 @@ async function seed() {
   const elRepo = AppDataSource.getRepository(EmployeeLocation);
   const balanceRepo = AppDataSource.getRepository(TimeOffBalance);
 
-  // Clear existing data
-  await balanceRepo.delete({});
-  await elRepo.delete({});
-  await employeeRepo.delete({});
-  await locationRepo.delete({});
+  // Clear existing data (TypeORM 0.3.20+ requires explicit criteria or clear())
+  await balanceRepo.clear();
+  await elRepo.clear();
+  await employeeRepo.clear();
+  await locationRepo.clear();
 
   // Create employees
   const alice = await employeeRepo.save(

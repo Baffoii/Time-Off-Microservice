@@ -8,7 +8,19 @@ module.exports = {
       tsconfig: 'tsconfig.json',
     }],
   },
-  collectCoverageFrom: ['src/**/*.(t|j)s'],
+  collectCoverageFrom: [
+    'src/**/*.(t|j)s',
+    // Exclude bootstrap entry points, config modules, seeds, and the mock HCM
+    // server (infrastructure code, not business logic under test)
+    '!src/main.ts',
+    '!src/app.module.ts',
+    '!src/database/database.module.ts',
+    '!src/database/seeds/**',
+    '!src/database/entities/index.ts',
+    '!src/mock-hcm/**',
+    '!src/**/*.module.ts',
+  ],
+  coverageReporters: ['text', 'lcov', 'html'],
   coverageDirectory: './coverage',
   testEnvironment: 'node',
   testTimeout: 15000,

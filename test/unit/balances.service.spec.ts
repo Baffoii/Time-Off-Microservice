@@ -123,7 +123,7 @@ describe('BalancesService', () => {
       balanceRepo.findOne.mockResolvedValue(mockBalance);
       balanceRepo.save.mockResolvedValue({ ...mockBalance, balanceDays: 20 });
 
-      const result = await service.upsertBalance('emp-1', 'loc-1', 20, 'HCM_REALTIME');
+      await service.upsertBalance('emp-1', 'loc-1', 20, 'HCM_REALTIME');
 
       expect(balanceRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ balanceDays: 20, source: 'HCM_REALTIME' }),
@@ -139,6 +139,38 @@ describe('BalancesService', () => {
 
       expect(balanceRepo.create).toHaveBeenCalled();
       expect(balanceRepo.save).toHaveBeenCalled();
+    });
+
+    it('sets missingFromLatestBatch flag when provided', async () => {
+      balanceRepo.findOne.mockResolvedValue(mockBalance);
+      balanceRepo.save.mockResolvedValue({ ...mockBalance, missingFromLatestBatch: true });
+
+      await service.upsertBalance('emp-1', 'loc-1', 10, 'HCM_BATCH', true);
+
+      expect(balanceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ missingFromLatestBatch: true }),
+      );
+    });
+  });
+
+  describe('deductBalance', () => {
+    it('deducts days from existing balance', async () => {
+      balanceRepo.findOne.mockResolvedValue({ ...mockBalance, balanceDays: 10 });
+      balanceRepo.save.mockResolvedValue({ ...mockBalance, balanceDays: 7 });
+
+      const result = await service.deductBalance('emp-1', 'loc-1', 3);
+
+      expect(balanceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ balanceDays: 7 }),
+      );
+    });
+
+    it('throws when balance record does not exist', async () => {
+      balanceRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.deductBalance('emp-1', 'loc-missing', 3)).rejects.toThrow(
+        'Balance not found for emp-1/loc-missing',
+      );
     });
   });
 });

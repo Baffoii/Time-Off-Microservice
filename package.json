@@ -12,6 +12,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "start:seed": "ts-node src/database/seeds/seed.ts",
+    "start:mock-hcm": "ts-node src/mock-hcm/mock-hcm.main.ts",
     "test": "jest",
     "test:unit": "jest --testPathPattern=test/unit",
     "test:integration": "jest --testPathPattern=test/integration",

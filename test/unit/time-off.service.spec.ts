@@ -16,6 +16,7 @@ import {
   InactiveEmployeeLocationException,
   InsufficientBalanceException,
   HcmTimeoutError,
+  HcmServerError,
 } from '../../src/common/exceptions';
 
 describe('TimeOffService', () => {
@@ -472,6 +473,56 @@ describe('TimeOffService', () => {
       expect(rejected.length).toBe(1);
       expect(fulfilled[0].value.status).toBe('APPROVED');
       expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(InsufficientBalanceException);
+    });
+
+    it('re-throws non-timeout HCM errors during balance check', async () => {
+      employeeRepo.findOne.mockResolvedValue(activeEmployee);
+      locationRepo.findOne.mockResolvedValue(location);
+      employeeLocationRepo.findOne.mockResolvedValue(activeEL);
+      requestRepo.findOne.mockResolvedValue(null);
+      balanceRepo.findOne.mockResolvedValue(balance);
+      hcmClient.getBalance.mockRejectedValue(new HcmServerError(500, 'HCM down'));
+
+      await expect(
+        service.createRequest({ employeeId: 'emp-1', locationId: 'loc-1', requestedDays: 2 }),
+      ).rejects.toThrow(HcmServerError);
+    });
+
+
+    it('creates FAILED when HCM submit returns success=false', async () => {
+      employeeRepo.findOne.mockResolvedValue(activeEmployee);
+      locationRepo.findOne.mockResolvedValue(location);
+      employeeLocationRepo.findOne.mockResolvedValue(activeEL);
+      requestRepo.findOne.mockResolvedValue(null);
+      balanceRepo.findOne.mockResolvedValue(balance);
+      hcmClient.getBalance.mockResolvedValue({ balanceDays: 10 });
+      hcmClient.submitTimeOff.mockResolvedValue({ transactionId: null, success: false });
+
+      const failedRequest = makeMockRequest({ status: 'FAILED', failureReason: 'HCM rejected' });
+      dataSource.transaction.mockImplementation(async (cb: Function) => {
+        const manager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === TimeOffBalance) {
+              return { findOne: jest.fn().mockResolvedValue(balance), save: jest.fn() };
+            }
+            if (entity === TimeOffRequest) {
+              return {
+                create: jest.fn().mockReturnValue(failedRequest),
+                save: jest.fn().mockResolvedValue(failedRequest),
+              };
+            }
+          }),
+        };
+        return cb(manager);
+      });
+
+      const result = await service.createRequest({
+        employeeId: 'emp-1',
+        locationId: 'loc-1',
+        requestedDays: 2,
+      });
+
+      expect(result.status).toBe('FAILED');
     });
 
     it('supports decimal requestedDays', async () => {

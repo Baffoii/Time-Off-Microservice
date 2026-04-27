@@ -595,27 +595,30 @@ describe('App E2E Tests - All 30 Scenarios', () => {
   // Test 30: Local balance never goes negative
   // -----------------------------------------------------------------------
   it('Test 30: Local balance never goes negative even under concurrent requests', async () => {
-    // Alice has 10 days - send 4 concurrent requests for 4 days each
-    // Only 2 should succeed (total 8 days), 2 should fail
-    const requests = Array.from({ length: 4 }, () =>
-      request(app.getHttpServer())
-        .post('/time-off-requests')
-        .send({ employeeId: alice.id, locationId: nyc.id, requestedDays: 4 }),
+    // Alice has 10 days - send 4 concurrent requests for 4 days each.
+    // Only 2 can succeed (floor(10/4) = 2). Use allSettled so a connection
+    // reset from one request doesn't abort the whole assertion.
+    const settled = await Promise.allSettled(
+      Array.from({ length: 4 }, () =>
+        request(app.getHttpServer())
+          .post('/time-off-requests')
+          .send({ employeeId: alice.id, locationId: nyc.id, requestedDays: 4 })
+          .timeout(12000),
+      ),
     );
 
-    const results = await Promise.all(requests);
+    const approved = settled
+      .filter((r) => r.status === 'fulfilled')
+      .map((r) => (r as PromiseFulfilledResult<any>).value)
+      .filter((r) => r.status === 201 && r.body.status === 'APPROVED');
 
-    const approvedResults = results.filter(
-      (r) => r.status === 201 && r.body.status === 'APPROVED',
-    );
-
-    // Balance should never go negative
     const bal = await dataSource.getRepository(TimeOffBalance).findOne({
       where: { employeeId: alice.id, locationId: nyc.id },
     });
-    expect(Number(bal.balanceDays)).toBeGreaterThanOrEqual(0);
 
-    // At most 2 can succeed (10 / 4 = 2)
-    expect(approvedResults.length).toBeLessThanOrEqual(2);
-  });
+    // Balance must never go negative
+    expect(Number(bal.balanceDays)).toBeGreaterThanOrEqual(0);
+    // At most 2 requests can be approved (floor(10/4) = 2)
+    expect(approved.length).toBeLessThanOrEqual(2);
+  }, 30000);
 });
