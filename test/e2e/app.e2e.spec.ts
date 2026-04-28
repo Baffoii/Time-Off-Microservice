@@ -621,4 +621,68 @@ describe('App E2E Tests - All 30 Scenarios', () => {
     // At most 2 requests can be approved (floor(10/4) = 2)
     expect(approved.length).toBeLessThanOrEqual(2);
   }, 30000);
+
+  // -----------------------------------------------------------------------
+  // Test 31: Stale-low local, HCM has sufficient balance → APPROVED
+  // This is the primary regression case for step-7 removal.
+  // A stale local cache must never be used as a rejection gate.
+  // -----------------------------------------------------------------------
+  it('Test 31: Stale-low local balance does not block approval when HCM has sufficient balance', async () => {
+    // Drive local balance down to 3 (stale-low) by updating the existing row
+    const balRepo = dataSource.getRepository(TimeOffBalance);
+    const existing = await balRepo.findOne({ where: { employeeId: alice.id, locationId: nyc.id } });
+    existing.balanceDays = 3;
+    await balRepo.save(existing);
+    // HCM has 10 days (work anniversary refreshed it, batch hasn't run yet)
+    store.setBalance(alice.id, nyc.id, 10);
+
+    const res = await request(app.getHttpServer())
+      .post('/time-off-requests')
+      .send({ employeeId: alice.id, locationId: nyc.id, requestedDays: 5 })
+      .expect(201);
+
+    expect(res.body.status).toBe('APPROVED');
+
+    // Local balance must have been updated to HCM value then deducted
+    const bal = await dataSource.getRepository(TimeOffBalance).findOne({
+      where: { employeeId: alice.id, locationId: nyc.id },
+    });
+    expect(Number(bal.balanceDays)).toBe(5);
+  });
+
+  // -----------------------------------------------------------------------
+  // Test 32: No local balance record — HCM has sufficient balance → APPROVED
+  // -----------------------------------------------------------------------
+  it('Test 32: No local balance record does not block approval when HCM has sufficient balance', async () => {
+    // Deliberately leave no TimeOffBalance row for alice/nyc
+    store.setBalance(alice.id, nyc.id, 8);
+
+    const res = await request(app.getHttpServer())
+      .post('/time-off-requests')
+      .send({ employeeId: alice.id, locationId: nyc.id, requestedDays: 5 })
+      .expect(201);
+
+    expect(res.body.status).toBe('APPROVED');
+
+    // Local record should have been created from HCM data then deducted
+    const bal = await dataSource.getRepository(TimeOffBalance).findOne({
+      where: { employeeId: alice.id, locationId: nyc.id },
+    });
+    expect(bal).not.toBeNull();
+    expect(Number(bal.balanceDays)).toBe(3);
+  });
+
+  // -----------------------------------------------------------------------
+  // Test 33: No local record, HCM insufficient → REJECTED at step 10
+  // -----------------------------------------------------------------------
+  it('Test 33: No local balance record + HCM insufficient → REJECTED', async () => {
+    store.setBalance(alice.id, nyc.id, 2);
+
+    const res = await request(app.getHttpServer())
+      .post('/time-off-requests')
+      .send({ employeeId: alice.id, locationId: nyc.id, requestedDays: 5 })
+      .expect(422);
+
+    expect(res.body.message).toContain('Insufficient balance');
+  });
 });

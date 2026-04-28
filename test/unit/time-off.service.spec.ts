@@ -225,16 +225,104 @@ describe('TimeOffService', () => {
       ).rejects.toThrow(InactiveEmployeeLocationException);
     });
 
-    it('rejects when local balance is insufficient', async () => {
+    it('rejects when HCM balance is insufficient (local was stale-high)', async () => {
       employeeRepo.findOne.mockResolvedValue(activeEmployee);
       locationRepo.findOne.mockResolvedValue(location);
       employeeLocationRepo.findOne.mockResolvedValue(activeEL);
-      requestRepo.findOne.mockResolvedValue(null); // no idempotency match
+      requestRepo.findOne.mockResolvedValue(null);
+      // Local shows 5 but HCM confirms 5 — both insufficient for 8 days
       balanceRepo.findOne.mockResolvedValue({ ...balance, balanceDays: 5 });
+      hcmClient.getBalance.mockResolvedValue({ balanceDays: 5 });
+      balanceRepo.save.mockResolvedValue({ ...balance, balanceDays: 5 });
 
       await expect(
         service.createRequest({ employeeId: 'emp-1', locationId: 'loc-1', requestedDays: 8 }),
       ).rejects.toThrow(InsufficientBalanceException);
+      // Rejection must come from HCM check, so HCM was consulted
+      expect(hcmClient.getBalance).toHaveBeenCalled();
+    });
+
+    it('approves when local is stale-low but HCM has sufficient balance', async () => {
+      employeeRepo.findOne.mockResolvedValue(activeEmployee);
+      locationRepo.findOne.mockResolvedValue(location);
+      employeeLocationRepo.findOne.mockResolvedValue(activeEL);
+      requestRepo.findOne.mockResolvedValue(null);
+      // Local shows only 3 (stale), HCM has 10 — should approve for 5
+      balanceRepo.findOne.mockResolvedValue({ ...balance, balanceDays: 3 });
+      hcmClient.getBalance.mockResolvedValue({ balanceDays: 10 });
+      balanceRepo.save.mockResolvedValue({ ...balance, balanceDays: 10 });
+      hcmClient.submitTimeOff.mockResolvedValue({ transactionId: 'TX-1', success: true });
+
+      const approvedRequest = makeMockRequest({ status: 'APPROVED' });
+      setupTransactionMock(approvedRequest);
+
+      const result = await service.createRequest({
+        employeeId: 'emp-1',
+        locationId: 'loc-1',
+        requestedDays: 5,
+      });
+
+      expect(result.status).toBe('APPROVED');
+      expect(hcmClient.getBalance).toHaveBeenCalled();
+    });
+
+    it('approves when no local balance record exists and HCM has sufficient balance', async () => {
+      employeeRepo.findOne.mockResolvedValue(activeEmployee);
+      locationRepo.findOne.mockResolvedValue(location);
+      employeeLocationRepo.findOne.mockResolvedValue(activeEL);
+      requestRepo.findOne.mockResolvedValue(null);
+      // No local record at all
+      balanceRepo.findOne.mockResolvedValue(null);
+      hcmClient.getBalance.mockResolvedValue({ balanceDays: 8 });
+      balanceRepo.create.mockReturnValue({ ...balance, balanceDays: 8 });
+      balanceRepo.save.mockResolvedValue({ ...balance, balanceDays: 8 });
+      hcmClient.submitTimeOff.mockResolvedValue({ transactionId: 'TX-2', success: true });
+
+      const approvedRequest = makeMockRequest({ status: 'APPROVED' });
+      setupTransactionMock(approvedRequest);
+
+      const result = await service.createRequest({
+        employeeId: 'emp-1',
+        locationId: 'loc-1',
+        requestedDays: 5,
+      });
+
+      expect(result.status).toBe('APPROVED');
+      expect(balanceRepo.create).toHaveBeenCalled();
+    });
+
+    it('rejects at step 10 when no local record exists and HCM balance is insufficient', async () => {
+      employeeRepo.findOne.mockResolvedValue(activeEmployee);
+      locationRepo.findOne.mockResolvedValue(location);
+      employeeLocationRepo.findOne.mockResolvedValue(activeEL);
+      requestRepo.findOne.mockResolvedValue(null);
+      balanceRepo.findOne.mockResolvedValue(null);
+      hcmClient.getBalance.mockResolvedValue({ balanceDays: 2 });
+      balanceRepo.create.mockReturnValue({ ...balance, balanceDays: 2 });
+      balanceRepo.save.mockResolvedValue({ ...balance, balanceDays: 2 });
+
+      await expect(
+        service.createRequest({ employeeId: 'emp-1', locationId: 'loc-1', requestedDays: 5 }),
+      ).rejects.toThrow(InsufficientBalanceException);
+      expect(hcmClient.getBalance).toHaveBeenCalled();
+      expect(hcmClient.submitTimeOff).not.toHaveBeenCalled();
+    });
+
+    it('rejects at step 10 when both local and HCM balances are insufficient', async () => {
+      employeeRepo.findOne.mockResolvedValue(activeEmployee);
+      locationRepo.findOne.mockResolvedValue(location);
+      employeeLocationRepo.findOne.mockResolvedValue(activeEL);
+      requestRepo.findOne.mockResolvedValue(null);
+      // Local stale-low at 3, HCM also low at 2
+      balanceRepo.findOne.mockResolvedValue({ ...balance, balanceDays: 3 });
+      hcmClient.getBalance.mockResolvedValue({ balanceDays: 2 });
+      balanceRepo.save.mockResolvedValue({ ...balance, balanceDays: 2 });
+
+      await expect(
+        service.createRequest({ employeeId: 'emp-1', locationId: 'loc-1', requestedDays: 5 }),
+      ).rejects.toThrow(InsufficientBalanceException);
+      // HCM was consulted — rejection is from the right place
+      expect(hcmClient.getBalance).toHaveBeenCalled();
     });
 
     it('creates FAILED request when HCM times out during balance check', async () => {

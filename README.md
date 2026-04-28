@@ -12,8 +12,8 @@ A production-quality Time-Off management microservice built with NestJS, TypeORM
 |---|---|
 | **TRD** | [TRD.md](https://github.com/Baffoii/Time-Off-Microservice/blob/main/TRD.md) — Technical Requirements Document covering architecture, data model, API design, sync strategy, failure modes, and design decisions |
 | **Code** | [github.com/Baffoii/Time-Off-Microservice](https://github.com/Baffoii/Time-Off-Microservice) — Full NestJS 11 + TypeORM + SQLite implementation |
-| **Test Cases** | [test/](https://github.com/Baffoii/Time-Off-Microservice/tree/main/test) — 143 tests across unit, integration, and E2E (all 30 spec scenarios covered) |
-| **Coverage** | [baffoii.github.io/Time-Off-Microservice](https://baffoii.github.io/Time-Off-Microservice/) · [coverage-report.pdf](https://github.com/Baffoii/Time-Off-Microservice/blob/main/coverage-report.pdf) — 99.39% statement coverage |
+| **Test Cases** | [test/](https://github.com/Baffoii/Time-Off-Microservice/tree/main/test) — 155 tests across unit, integration, and E2E (all spec scenarios covered including stale-balance correctness) |
+| **Coverage** | [baffoii.github.io/Time-Off-Microservice](https://baffoii.github.io/Time-Off-Microservice/) · [coverage-report.pdf](https://github.com/Baffoii/Time-Off-Microservice/blob/main/coverage-report.pdf) — 99.59% statement coverage |
 
 ---
 

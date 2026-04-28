@@ -108,23 +108,21 @@ export class TimeOffService {
     requestedDays: number,
     idempotencyKey?: string,
   ): Promise<TimeOffRequest> {
-    // 6. Load local balance - reject if insufficient
+    // 6. Load local balance for reference only — do NOT reject based on its
+    // value. The local record is a cache and can be stale in either direction.
+    // HCM is the source of truth; rejection happens only at step 10 below.
     const localBalance = await this.balanceRepo.findOne({
       where: { employeeId, locationId },
     });
+    const localDays = localBalance ? Number(localBalance.balanceDays) : null;
 
-    const localDays = localBalance ? Number(localBalance.balanceDays) : 0;
-    if (localDays < requestedDays - 0.001) {
-      throw new InsufficientBalanceException(localDays, requestedDays);
-    }
-
-    // 7. Fetch realtime HCM balance
+    // 7. Fetch realtime HCM balance — this is the authoritative check
     let hcmDays: number;
     try {
       const hcmBalance = await this.hcmClient.getBalance(employeeId, locationId);
       hcmDays = Number(hcmBalance.balanceDays);
     } catch (err) {
-      // 8. If HCM call times out → create FAILED request
+      // 8. If HCM call times out → create FAILED request (no deduction)
       if (err instanceof HcmTimeoutError) {
         const failedRequest = this.requestRepo.create({
           employeeId,
@@ -140,20 +138,31 @@ export class TimeOffService {
       throw err;
     }
 
-    // 9. Update local balance if HCM differs
-    if (Math.abs(hcmDays - localDays) > 0.001) {
+    // 9. Sync local record with HCM value (create if absent, update if stale)
+    const refDays = localDays ?? 0;
+    if (localBalance === null || Math.abs(hcmDays - refDays) > 0.001) {
       this.logger.log(
-        `Updating local balance for ${employeeId}/${locationId}: ${localDays} -> ${hcmDays}`,
+        `Syncing local balance for ${employeeId}/${locationId}: ${refDays} -> ${hcmDays}`,
       );
       if (localBalance) {
         localBalance.balanceDays = hcmDays;
         localBalance.source = 'HCM_REALTIME';
         localBalance.lastSyncedAt = new Date();
         await this.balanceRepo.save(localBalance);
+      } else {
+        await this.balanceRepo.save(
+          this.balanceRepo.create({
+            employeeId,
+            locationId,
+            balanceDays: hcmDays,
+            source: 'HCM_REALTIME',
+            lastSyncedAt: new Date(),
+          }),
+        );
       }
     }
 
-    // 10. Defensive check: if updated balance still < requestedDays → reject
+    // 10. Reject if HCM balance is insufficient — this is the only balance gate
     const effectiveDays = hcmDays;
     if (effectiveDays < requestedDays - 0.001) {
       throw new InsufficientBalanceException(effectiveDays, requestedDays);

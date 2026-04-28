@@ -119,10 +119,10 @@ Every `POST /time-off-requests` follows a deterministic 14-step flow:
 4. EmployeeLocation pairing exists and is `active`
 5. Idempotency key check — if a request with this key already exists, return it immediately (no reprocessing)
 
-**Phase 2 — Concurrency control + balance check**
+**Phase 2 — Concurrency control + local balance load**
 
 6. Acquire `async-mutex` lock keyed on `(employeeId, locationId)` — serializes concurrent requests for the same pair
-7. Load local balance — reject with `InsufficientBalanceException` if clearly insufficient (avoids unnecessary HCM call)
+7. Load local balance for reference only — **do not reject based on this value**. The local record is a cache and can be stale in either direction (external HCM writes, year-start resets, etc.). HCM realtime is the only authoritative gate (step 11)
 
 **Phase 3 — HCM realtime validation**
 
@@ -182,11 +182,11 @@ Returns: `{ updated, inserted, skipped, quarantined, stillMissing }`
 | HCM 500 during submit | `FAILED` | Unchanged |
 | HCM returns success, no transaction ID | `APPROVED_WITH_WARNING` | Deducted |
 | HCM rejects (insufficient / bad dimensions) | `FAILED` | Unchanged |
-| HCM in `unreliableValidation` mode accepts bad request | Caught at step 7 or 11 — never reaches HCM | Unchanged |
+| HCM in `unreliableValidation` mode accepts bad request | Caught at step 11 (post-HCM re-check) — never deducts | Unchanged |
 | Batch sync HCM server error | Entire batch rolled back | Unchanged |
 | Batch record has negative balance | Quarantined, skipped | Unchanged |
 
-**Invariant:** The local balance can never go below zero under any code path. Both the local pre-check and the post-HCM re-check enforce this before the DB transaction is opened.
+**Invariant:** The local balance can never go below zero under any code path. The post-HCM re-check at step 11 enforces this before the DB transaction is opened. Local balance is treated as a read-through cache only — it is synced from HCM at step 10 before the gate is applied.
 
 ---
 
@@ -240,19 +240,20 @@ The test suite was written to mirror the spec exactly: every stated challenge ha
 
 ### Test Architecture
 
-**Unit Tests — 43 tests** (`test/unit/`)
+**Unit Tests — 96 tests** (`test/unit/`)
 
-All external dependencies are mocked via Jest. Each test exercises a single service method in isolation.
+All external dependencies are mocked via Jest. Each test exercises a single service method or controller action in isolation.
 
 Coverage includes:
-- `TimeOffService`: all 14 request flow steps, including each failure mode
+- `TimeOffService`: all 14 request flow steps, including each failure mode and stale-local scenarios (stale-low, no-local-record, HCM-authoritative rejection)
 - `SyncService`: mark-and-sweep logic, deduplication (last-wins), negative balance quarantine, reconcile path
 - `BalancesService`: local-only read vs. HCM refresh path
 - `HcmClientService`: correct error type thrown for timeout (`HcmTimeoutError`), 500 (`HcmServerError`), 404 (`HcmNotFoundError`)
+- All controllers (`TimeOffController`, `EmployeesController`, `LocationsController`): delegation to service, `NotFoundException` propagation
 
 **Value:** Millisecond feedback. Safe to run on every commit. Isolates exactly which branch or condition failed.
 
-**Integration Tests — 21 tests** (`test/integration/`)
+**Integration Tests — 26 tests** (`test/integration/`)
 
 Real in-memory SQLite database (`better-sqlite3`, `:memory:`). `HcmClientService` is overridden via NestJS DI with `MockHcmClientService` — no HTTP calls, but the same typed error surface.
 
@@ -264,19 +265,20 @@ Coverage includes:
 
 **Value:** Catches TypeORM quirks (e.g. `delete({})` vs `clear()`, `update({})` vs QueryBuilder) and schema-level constraints that mocks paper over. Guards against regressions from ORM version upgrades.
 
-**E2E Tests — 36 tests** (`test/e2e/`)
+**E2E Tests — 33 tests** (`test/e2e/`)
 
 Full NestJS HTTP application via `supertest`, in-memory SQLite, `MockHcmClientService` injected via DI. Every test hits the HTTP layer and asserts on the HTTP response body and DB state.
 
-All 30 spec scenarios are covered as named tests:
+All spec scenarios are covered as named tests:
 - **Happy paths** (1–4): approval, balance read, batch insert, batch update
 - **Validation edge cases** (5–11): zero days, negative days, nonexistent employee/location, inactive employee, inactive pairing, insufficient local balance
 - **HCM staleness** (12–16): stale local (HCM has more), stale local (HCM has less), work anniversary, year-start refresh
 - **Defensive HCM behavior** (17–21): unreliable validation mode, missing transaction ID, timeout on balance check, timeout on submit, server error during batch
 - **Concurrency/idempotency** (22–24): two simultaneous requests, duplicate idempotency key, retry after failure
 - **Data integrity** (25–30): new pair inserted, omitted pair flagged, duplicate batch records, negative balance quarantined, decimal balances, no negative local balance
+- **Step-7 fix scenarios** (31–33): stale-low local approved via HCM, no local record approved via HCM, no local record + HCM insufficient → rejected
 
-**Value:** The contract test for the full system. If all 36 pass, the microservice behaves exactly as specified. These are the tests a future developer (or agent) must not break.
+**Value:** The contract test for the full system. If all 33 pass, the microservice behaves exactly as specified. These are the tests a future developer (or agent) must not break.
 
 ### Mock HCM Server
 
@@ -342,7 +344,7 @@ mkdir -p data
 npm run start:seed    # seed local SQLite with employees, locations, balances
 npm run start:dev     # dev server on :3000
 
-npm test              # all 100 tests
+npm test              # all 155 tests
 npm run test:cov      # with coverage report (./coverage/)
 npm run build         # compile to ./dist
 npm run start:prod    # run compiled build
